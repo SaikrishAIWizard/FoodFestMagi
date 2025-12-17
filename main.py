@@ -1,8 +1,13 @@
+import os
 import streamlit as st
+
+# ===================== IMPORTANT =====================
+# Disable CrewAI telemetry globally (prevents SIGTERM error)
+os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 
 from interactive_quiz.quiz import InteractiveQuiz
 from Guess_Number.guess_the_number import GuessTheNumber
-from Memory_Matrix.memory_matrix import MemoryMatrix
+# from Memory_Matrix.memory_matrix import MemoryMatrix  # optional
 
 # ===================== APP CONFIG =====================
 st.set_page_config(
@@ -17,6 +22,8 @@ PASSWORD = "fest2025"
 # ===================== SESSION STATE INIT =====================
 st.session_state.setdefault("authenticated", False)
 st.session_state.setdefault("active_game", None)
+st.session_state.setdefault("quiz", None)
+st.session_state.setdefault("number_game_instance", None)
 
 # ===================== AUTHENTICATION =====================
 if not st.session_state.authenticated:
@@ -39,32 +46,31 @@ st.sidebar.title("🎮 Select a Game")
 
 if st.sidebar.button("🧠 Interactive Quiz"):
     st.session_state.active_game = "quiz"
-    st.session_state.pop("quiz", None)
-    st.session_state.pop("number_game_instance", None)
-    st.session_state.pop("matrix", None)
+    st.session_state.quiz = None
+    st.session_state.number_game_instance = None
 
 if st.sidebar.button("🔢 Guess the Hidden Number"):
     st.session_state.active_game = "number"
-    st.session_state.pop("quiz", None)
-    st.session_state.pop("matrix", None)
-
-# (Optional – keep ready)
-# if st.sidebar.button("🧩 Memory Matrix"):
-#     st.session_state.active_game = "matrix"
-#     st.session_state.pop("quiz", None)
-#     st.session_state.pop("number_game_instance", None)
+    st.session_state.quiz = None
+    st.session_state.number_game_instance = None
 
 # ===================== MAIN UI =====================
 st.title("🍔 Food Fest Games")
 
+# ====================================================
 # ===================== QUIZ GAME =====================
+# ====================================================
 if st.session_state.active_game == "quiz":
     st.header("🧠 Interactive Quiz")
 
-    if "quiz" not in st.session_state:
-        topic = st.text_input("Enter quiz topic")
+    # Quiz not generated yet
+    if st.session_state.quiz is None:
+        topic = st.text_input(
+            "Enter quiz topic",
+            placeholder="e.g., Python, SQL, AI, Food Safety"
+        )
 
-        if st.button("Generate Quiz"):
+        if st.button("🚀 Generate Quiz"):
             if not topic.strip():
                 st.warning("Please enter a topic")
             else:
@@ -74,24 +80,29 @@ if st.session_state.active_game == "quiz":
 
                         if questions:
                             st.session_state.quiz = InteractiveQuiz(questions)
+                            st.success("Quiz ready!")
+                            st.rerun()
                         else:
-                            st.error("No questions generated. Try again.")
+                            st.error("Failed to generate quiz. Try again.")
 
                     except Exception as e:
                         st.error("Error generating quiz")
                         st.code(str(e))
 
-    if "quiz" in st.session_state:
+    # Quiz running / results view
+    if st.session_state.quiz:
         quiz = st.session_state.quiz
         quiz.display_score()
         quiz.display_feedback()
         quiz.display_question()
 
-# ===================== NUMBER GAME =====================
+# ====================================================
+# ===================== NUMBER GAME ===================
+# ====================================================
 elif st.session_state.active_game == "number":
     st.header("🔢 Guess the Hidden Number")
 
-    if "number_game_instance" not in st.session_state:
+    if st.session_state.number_game_instance is None:
         st.session_state.number_game_instance = GuessTheNumber(
             min_num=1,
             max_num=100,
@@ -100,6 +111,8 @@ elif st.session_state.active_game == "number":
 
     st.session_state.number_game_instance.play()
 
-# ===================== DEFAULT =====================
+# ====================================================
+# ===================== DEFAULT =======================
+# ====================================================
 else:
     st.info("👈 Please select a game from the sidebar")

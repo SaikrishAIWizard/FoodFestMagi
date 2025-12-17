@@ -3,15 +3,15 @@ import json
 import streamlit as st
 from dotenv import load_dotenv
 
-# ------------------ IMPORTANT: Disable CrewAI Telemetry ------------------
+# ================== IMPORTANT ==================
+# Disable CrewAI telemetry (fixes SIGTERM issue)
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 
-# ------------------ Load Environment Variables ------------------
+# ================== LOAD ENV ==================
 load_dotenv()
-
 
 # ===================== QUIZ CLASS =====================
 class InteractiveQuiz:
@@ -20,12 +20,15 @@ class InteractiveQuiz:
         self.current_question = 0
         self.score = 0
         self.feedback = None
+        self.user_answers = []
 
     def display_question(self):
         if self.current_question < len(self.questions):
             q = self.questions[self.current_question]
 
-            st.subheader(f"Question {self.current_question + 1}/{len(self.questions)}")
+            st.subheader(
+                f"Question {self.current_question + 1}/{len(self.questions)}"
+            )
             st.write(q["question"])
 
             selected_option = st.radio(
@@ -35,21 +38,24 @@ class InteractiveQuiz:
             )
 
             if st.button("Submit", key=f"submit_{self.current_question}"):
+
+                # Store user answer
+                self.user_answers.append(selected_option)
+
                 if selected_option == q["answer"]:
                     self.feedback = ("success", "Correct! 🎉")
                     self.score += 1
                 else:
-                    self.feedback = ("error", f"Wrong! Correct answer: {q['answer']}")
+                    self.feedback = (
+                        "error",
+                        f"Wrong! Correct answer: {q['answer']}"
+                    )
 
                 self.current_question += 1
                 st.rerun()
-        else:
-            st.subheader("Quiz Finished 🎉")
-            st.write(f"Final Score: **{self.score}/{len(self.questions)}**")
 
-            if st.button("Restart Quiz"):
-                self.restart()
-                st.rerun()
+        else:
+            self.display_results()
 
     def display_feedback(self):
         if self.feedback:
@@ -63,10 +69,39 @@ class InteractiveQuiz:
     def display_score(self):
         st.metric("Score", self.score)
 
+    # ===================== FINAL RESULTS =====================
+    def display_results(self):
+        st.subheader("🎉 Quiz Completed")
+        st.write(
+            f"### Final Score: **{self.score}/{len(self.questions)}**"
+        )
+
+        st.divider()
+        st.subheader("📋 Answer Review")
+
+        for idx, q in enumerate(self.questions):
+            user_ans = self.user_answers[idx]
+            correct = q["answer"]
+
+            st.markdown(f"**Q{idx+1}. {q['question']}**")
+
+            if user_ans == correct:
+                st.success(f"Your Answer: {user_ans} ✅")
+            else:
+                st.error(f"Your Answer: {user_ans} ❌")
+                st.info(f"Correct Answer: {correct}")
+
+        st.divider()
+
+        if st.button("🔄 Restart Quiz"):
+            self.restart()
+            st.rerun()
+
     def restart(self):
         self.current_question = 0
         self.score = 0
         self.feedback = None
+        self.user_answers = []
 
     # ===================== QUESTION GENERATION =====================
     @staticmethod
@@ -79,48 +114,64 @@ class InteractiveQuiz:
 
         agent = Agent(
             role="Quiz Master",
-            goal="Generate quiz questions in strict JSON format",
-            backstory="You create clean multiple-choice quizzes for students.",
+            goal="Generate high-quality multiple-choice questions in strict JSON",
+            backstory=(
+                "You are an expert educator who creates precise, factual, "
+                "and unambiguous quiz questions."
+            ),
             llm=llm
         )
 
         task = Task(
             description=(
-                f"Generate EXACTLY 5 multiple-choice questions on '{topic}'.\n"
-                "Rules:\n"
-                "- Return ONLY valid JSON\n"
-                "- No explanations, no markdown\n"
-                "- Each question must have exactly 3 options\n\n"
-                "JSON format:\n"
+                f"You are an expert educator.\n\n"
+                f"Generate EXACTLY 5 multiple-choice questions "
+                f"on the topic: '{topic}'.\n\n"
+                "STRICT RULES:\n"
+                "- Questions must be factual and unambiguous\n"
+                "- Only ONE option must be correct\n"
+                "- Avoid subjective or opinion-based questions\n"
+                "- Difficulty: intermediate to advanced\n"
+                "- Each option must be concise and distinct\n\n"
+                "OUTPUT FORMAT (JSON ONLY — NO EXTRA TEXT):\n"
                 "[\n"
                 "  {\n"
-                "    \"question\": \"...\",\n"
-                "    \"options\": [\"A\", \"B\", \"C\"],\n"
-                "    \"answer\": \"A\"\n"
+                "    \"question\": \"Clear question text\",\n"
+                "    \"options\": [\"Option A\", \"Option B\", \"Option C\"],\n"
+                "    \"answer\": \"Option A\"\n"
                 "  }\n"
                 "]"
             ),
             agent=agent,
-            expected_output="Valid JSON array only"
+            expected_output="A valid JSON array strictly matching the schema"
         )
 
-        crew = Crew(agents=[agent], tasks=[task])
+        crew = Crew(
+            agents=[agent],
+            tasks=[task]
+        )
 
         result = crew.kickoff()
 
-        # ✅ FIX: Extract raw text from CrewOutput
+        # Extract raw LLM text
         output_text = result.raw
 
         try:
-            return json.loads(output_text)
-        except json.JSONDecodeError:
-            st.error("❌ Failed to parse JSON from LLM")
+            parsed = json.loads(output_text)
+
+            # Basic validation
+            assert isinstance(parsed, list)
+            for q in parsed:
+                assert "question" in q
+                assert "options" in q
+                assert "answer" in q
+                assert q["answer"] in q["options"]
+
+            return parsed
+
+        except Exception:
+            st.error("❌ Failed to parse valid quiz data")
             st.code(output_text)
             return []
 
-
-# ===================== STREAMLIT APP =====================
-st.set_page_config(page_title="AI Quiz App", page_icon="🧠")
-
-st.title("🧠 AI-Powered Quiz Generator")
 
