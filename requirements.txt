@@ -1,0 +1,11 @@
+streamlit
+crewai
+langchain
+openai
+litellm
+fastapi
+python-dotenv
+#litellm[proxy]
+apscheduler
+pydantic[email]
+fastapi-sso
